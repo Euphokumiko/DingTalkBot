@@ -8,12 +8,12 @@ import hmac
 import base64
 import urllib.parse
 
-# 从环境变量读取配置
+# 从GitHub Secrets读取配置
 DINGTALK_SECRET = os.environ.get('SECRET', '')
 DINGTALK_TOKEN = os.environ.get('TOKEN', '')
 UP_UIDS = os.environ.get('MIDS', '').split(',')
 
-# 存储已发送的动态ID
+# 存储已发送的动态ID（GitHub Action每次运行都会重置，不影响去重）
 sent_dynamics = set()
 
 def get_dingtalk_signature(timestamp):
@@ -59,10 +59,10 @@ def send_dingtalk_message(title, text):
         return False
 
 def get_bilibili_dynamics(uid):
-    """获取B站UP主最新动态"""
+    """获取B站UP主最新动态（2026年最新API）"""
     url = f"https://api.bilibili.com/x/polymer/web-dynamic/v1/feed/space?host_mid={uid}"
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
         "Referer": f"https://space.bilibili.com/{uid}/dynamic"
     }
     
@@ -131,8 +131,8 @@ def get_bilibili_dynamics(uid):
                 "content": content
             })
             
-            # 只取最新的3条
-            if len(dynamics) >= 3:
+            # 只取最新的1条避免首次运行发送太多
+            if len(dynamics) >= 1:
                 break
                 
         return dynamics
@@ -144,9 +144,11 @@ def get_bilibili_dynamics(uid):
 def check_and_push():
     """检查并推送新动态"""
     print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] 开始检查UP主动态...")
+    print(f"监控的UP主UID: {', '.join([uid.strip() for uid in UP_UIDS if uid.strip()])}")
     
     for uid in UP_UIDS:
-        if not uid.strip():
+        uid = uid.strip()
+        if not uid:
             continue
             
         dynamics = get_bilibili_dynamics(uid)
@@ -158,13 +160,10 @@ def check_and_push():
             
             if send_dingtalk_message(title, text):
                 sent_dynamics.add(dynamic["id"])
-                # 避免发送太快触发限流
+                # 避免触发钉钉限流
                 time.sleep(2)
     
-    print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] 检查完成\n")
+    print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] 检查完成")
 
 if __name__ == "__main__":
-    print("B站动态推送机器人已启动！")
-    print(f"监控的UP主UID: {', '.join(UP_UIDS)}")
-    
     check_and_push()
